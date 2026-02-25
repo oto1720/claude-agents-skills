@@ -70,16 +70,16 @@ grep -r "Provider\|riverpod\|GetIt\|injectable" lib --include="*.dart" -l
 
 **`docs/learning/01_architecture.md`** — アーキテクチャ解説
 ```
-# アーキテクチャ解説
+# アーキテクチャ解説　
 ## 採用しているパターン（例: Clean Architecture）
 ## 各レイヤーの責任
-## レイヤー間の依存関係図
+## レイヤー間の依存関係図　mermaidで制作
 ## なぜこの設計にしているか（推測・解説）
 ```
 
 **`docs/learning/02_data_flow.md`** — データの流れ
 ```
-# データフロー解説
+# データフロー解説　mermaidで制作
 ## ユーザー操作からUI更新までの流れ
 ## APIコール / Firebaseアクセスのパターン
 ## 状態管理の仕組み
