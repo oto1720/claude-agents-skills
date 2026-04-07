@@ -1,0 +1,209 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'echo \"[session-start] Flutter harness loaded at $(date +\"%Y-%m-%d %H:%M:%S\")\"; if [ -f pubspec.yaml ]; then echo \"[session-start] Flutter project detected: $(grep \"^name:\" pubspec.yaml | head -1)\"; FLUTTER_VERSION=$(flutter --version 2>/dev/null | head -1); echo \"[session-start] $FLUTTER_VERSION\"; fi; if [ -f .claude/contexts/dev.md ]; then echo \"[session-start] Context loaded: dev.md\"; fi'",
+            "description": "Flutter セッション開始時に環境情報を表示"
+          }
+        ],
+        "id": "session:start:flutter-env"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'FILE=$(echo \"$CLAUDE_TOOL_INPUT\" | python3 -c \"import sys,json; d=json.load(sys.stdin); print(d.get(\\\"file_path\\\", \\\"\\\"))\" 2>/dev/null); if [[ \"$FILE\" == *.dart ]]; then dart format \"$FILE\" 2>/dev/null && echo \"[dart-format] formatted: $FILE\"; fi'",
+            "description": "Dart ファイル編集後に dart format を自動適用",
+            "async": false
+          }
+        ],
+        "id": "post:edit:dart-format"
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'FILE=$(echo \"$CLAUDE_TOOL_INPUT\" | python3 -c \"import sys,json; d=json.load(sys.stdin); print(d.get(\\\"file_path\\\", \\\"\\\"))\" 2>/dev/null); if [[ \"$FILE\" == *.dart ]]; then ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd); RESULT=$(flutter analyze --no-fatal-infos \"$FILE\" 2>&1 | grep -E \"error:|warning:\" | head -5); if [ -n \"$RESULT\" ]; then echo \"[flutter-analyze] $FILE:\"; echo \"$RESULT\"; fi; fi'",
+            "description": "Dart ファイル編集後に flutter analyze を実行（エラー・警告のみ表示）",
+            "async": true
+          }
+        ],
+        "id": "post:edit:flutter-analyze"
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'FILE=$(echo \"$CLAUDE_TOOL_INPUT\" | python3 -c \"import sys,json; d=json.load(sys.stdin); print(d.get(\\\"file_path\\\", \\\"\\\"))\" 2>/dev/null); if [[ \"$FILE\" == *.dart ]] && ! [[ \"$FILE\" == *_test.dart ]]; then TEST_FILE=\"${FILE%.dart}_test.dart\"; if [ ! -f \"$TEST_FILE\" ]; then echo \"[test-reminder] テストファイルが見つかりません: $TEST_FILE\"; fi; fi'",
+            "description": "Dart ファイル編集時にテストファイルの存在チェック",
+            "async": true
+          }
+        ],
+        "id": "post:edit:test-reminder"
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'FILE=$(echo \"$CLAUDE_TOOL_INPUT\" | python3 -c \"import sys,json; d=json.load(sys.stdin); print(d.get(\\\"file_path\\\", \\\"\\\"))\" 2>/dev/null); if [[ \"$FILE\" == *.dart ]]; then PRINTS=$(grep -n \"^  print(\" \"$FILE\" 2>/dev/null | grep -v \"//\"); if [ -n \"$PRINTS\" ]; then echo \"[console-warn] print() が本番コードに含まれています: $FILE\"; echo \"$PRINTS\"; echo \"debugPrint() または logger パッケージの使用を検討してください\"; fi; fi'",
+            "description": "Dart ファイルの print() 警告",
+            "async": true
+          }
+        ],
+        "id": "post:edit:print-warn"
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'FILE=$(echo \"$CLAUDE_TOOL_INPUT\" | python3 -c \"import sys,json; d=json.load(sys.stdin); print(d.get(\\\"file_path\\\", \\\"\\\"))\" 2>/dev/null); if [[ \"$FILE\" == *.dart ]]; then SECRETS=$(grep -niE \"api_key|apikey|secret|password|token|private_key\" \"$FILE\" 2>/dev/null | grep -v \"//\"); if [ -n \"$SECRETS\" ]; then echo \"[security-warn] ⚠️ 機密情報の可能性: $FILE\"; echo \"$SECRETS\"; fi; fi'",
+            "description": "Dart ファイルの機密情報ハードコード検出",
+            "async": true
+          }
+        ],
+        "id": "post:edit:secrets-detect"
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'CMD=$(echo \"$CLAUDE_TOOL_INPUT\" | python3 -c \"import sys,json; d=json.load(sys.stdin); print(d.get(\\\"command\\\", \\\"\\\"))\" 2>/dev/null); if echo \"$CMD\" | grep -qE \"flutter (build|run)\"; then RESULT=$(echo \"$CLAUDE_TOOL_RESULT\" | python3 -c \"import sys,json; d=json.load(sys.stdin); print(d.get(\\\"output\\\", \\\"\\\"))\" 2>/dev/null | tail -5); echo \"[build-log] $(date +\"%H:%M:%S\") $CMD\"; fi'",
+            "description": "flutter build/run コマンドの実行ログ",
+            "async": true
+          }
+        ],
+        "id": "post:bash:flutter-build-log"
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'CMD=$(echo \"$CLAUDE_TOOL_INPUT\" | python3 -c \"import sys,json; d=json.load(sys.stdin); print(d.get(\\\"command\\\", \\\"\\\"))\" 2>/dev/null); if echo \"$CMD\" | grep -qE \"gh pr create\"; then PR_URL=$(echo \"$CLAUDE_TOOL_RESULT\" | grep -oE \"https://github\\.com/[^ ]+\"); if [ -n \"$PR_URL\" ]; then echo \"[pr-created] PR作成: $PR_URL\"; echo \"レビューコマンド: gh pr view --web\"; fi; fi'",
+            "description": "PR 作成後の URL ログと review コマンド表示",
+            "async": true
+          }
+        ],
+        "id": "post:bash:pr-created"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'CMD=$(echo \"$CLAUDE_TOOL_INPUT\" | python3 -c \"import sys,json; d=json.load(sys.stdin); print(d.get(\\\"command\\\", \\\"\\\"))\" 2>/dev/null); if echo \"$CMD\" | grep -qE \"flutter (build|run|test)\" && [ -f pubspec.yaml ] && [ ! -f pubspec.lock ]; then echo \"[pubspec-check] ⚠️ pubspec.lock が見つかりません。flutter pub get を先に実行してください。\" >&2; exit 1; fi'",
+            "description": "flutter コマンド前に pub get 未実行チェック"
+          }
+        ],
+        "id": "pre:bash:pubspec-check"
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'CMD=$(echo \"$CLAUDE_TOOL_INPUT\" | python3 -c \"import sys,json; d=json.load(sys.stdin); print(d.get(\\\"command\\\", \\\"\\\"))\" 2>/dev/null); if echo \"$CMD\" | grep -qE \"git commit\" && echo \"$CMD\" | grep -q \"\\-\\-no\\-verify\"; then echo \"[git-guard] ❌ --no-verify フラグは禁止されています。CI チェックをバイパスしないでください。\" >&2; exit 1; fi'",
+            "description": "git --no-verify フラグをブロック"
+          }
+        ],
+        "id": "pre:bash:block-no-verify"
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'CMD=$(echo \"$CLAUDE_TOOL_INPUT\" | python3 -c \"import sys,json; d=json.load(sys.stdin); print(d.get(\\\"command\\\", \\\"\\\"))\" 2>/dev/null); if echo \"$CMD\" | grep -qE \"git push.*--force\" && echo \"$CMD\" | grep -qE \"(main|master|develop)\"; then echo \"[git-guard] ❌ main/develop への force push は禁止されています。\" >&2; exit 1; fi'",
+            "description": "main/develop への force push をブロック"
+          }
+        ],
+        "id": "pre:bash:block-force-push"
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'CMD=$(echo \"$CLAUDE_TOOL_INPUT\" | python3 -c \"import sys,json; d=json.load(sys.stdin); print(d.get(\\\"command\\\", \\\"\\\"))\" 2>/dev/null); if echo \"$CMD\" | grep -qE \"flutter test\" && [ -f pubspec.yaml ]; then FAILED=$(flutter test --dry-run 2>/dev/null | grep -c FAILED || true); if [ \"$FAILED\" -gt 0 ]; then echo \"[test-warn] ⚠️ $FAILED 個のテストが失敗しています。テストを確認してください。\"; fi; fi'",
+            "description": "flutter test 前の既存テスト失敗チェック",
+            "async": true
+          }
+        ],
+        "id": "pre:bash:test-gate"
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'CONTEXT_DIR=\".claude/contexts\"; mkdir -p \"$CONTEXT_DIR\"; echo \"# Session Context - $(date +\"%Y-%m-%d %H:%M:%S\")\" > \"$CONTEXT_DIR/last-session.md\"; echo \"\" >> \"$CONTEXT_DIR/last-session.md\"; if [ -f pubspec.yaml ]; then echo \"## Flutter Project\" >> \"$CONTEXT_DIR/last-session.md\"; grep \"^name:\\|^version:\" pubspec.yaml >> \"$CONTEXT_DIR/last-session.md\"; fi; echo \"\" >> \"$CONTEXT_DIR/last-session.md\"; echo \"## Recent Changes\" >> \"$CONTEXT_DIR/last-session.md\"; git diff --name-only HEAD 2>/dev/null | head -10 >> \"$CONTEXT_DIR/last-session.md\"; echo \"[pre-compact] Context saved to $CONTEXT_DIR/last-session.md\"'",
+            "description": "コンテキスト圧縮前にセッション状態を保存"
+          }
+        ],
+        "id": "pre:compact:save-context"
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'if [ -f pubspec.yaml ]; then DART_FILES=$(git diff --name-only HEAD 2>/dev/null | grep \"\\.dart$\"); if [ -n \"$DART_FILES\" ]; then echo \"[stop:format] Running dart format on changed files...\"; echo \"$DART_FILES\" | xargs dart format 2>/dev/null; ISSUES=$(echo \"$DART_FILES\" | xargs flutter analyze --no-fatal-infos 2>&1 | grep \"error:\" | head -5); if [ -n \"$ISSUES\" ]; then echo \"[stop:analyze] ⚠️ 未解決の Analyzer エラー:\"; echo \"$ISSUES\"; fi; fi; fi'",
+            "description": "セッション終了時に変更された Dart ファイルをフォーマット・解析",
+            "async": true,
+            "timeout": 60000
+          }
+        ],
+        "id": "stop:flutter-quality"
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'PRINT_COUNT=$(git diff HEAD 2>/dev/null | grep \"^+\" | grep -c \"^+  print(\" || true); if [ \"$PRINT_COUNT\" -gt 0 ]; then echo \"[stop:console] ⚠️ $PRINT_COUNT 個の print() が変更に含まれています。debugPrint() への変更を検討してください。\"; fi'",
+            "description": "セッション終了時に print() の残存チェック",
+            "async": true
+          }
+        ],
+        "id": "stop:check-print"
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'LOG_DIR=\".claude/logs\"; mkdir -p \"$LOG_DIR\"; echo \"$(date +\"%Y-%m-%d %H:%M:%S\") session-end\" >> \"$LOG_DIR/sessions.log\"; CHANGED=$(git diff --name-only HEAD 2>/dev/null | wc -l); echo \"$(date +\"%Y-%m-%d %H:%M:%S\") changed-files=$CHANGED\" >> \"$LOG_DIR/sessions.log\"'",
+            "description": "セッション終了ログの記録",
+            "async": true
+          }
+        ],
+        "id": "stop:session-log"
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'if command -v osascript &>/dev/null; then osascript -e \"display notification \\\"Claude Code セッション完了\" with title \\\"Flutter Harness\\\"\" 2>/dev/null; elif command -v notify-send &>/dev/null; then notify-send \"Flutter Harness\" \"Claude Code セッション完了\"; fi'",
+            "description": "セッション終了時にデスクトップ通知（macOS/Linux）",
+            "async": true
+          }
+        ],
+        "id": "stop:desktop-notify"
+      }
+    ]
+  }
+}
